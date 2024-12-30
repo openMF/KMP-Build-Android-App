@@ -1,209 +1,141 @@
-# KMP Android Build Action
+# KMP Build Android App Action
 
-## Overview
-
-A comprehensive GitHub Action for building Android applications with support for multiple flavors,
-build types, and secure release configurations.
+This GitHub Action automates the process of building Android applications using Gradle. It supports both Debug and Release builds, with optional signing configuration for Release builds.
 
 ## Features
 
-- 🤖 Cross-flavor Android app building
-- 🔒 Secure release configuration support
-- 📦 Automatic artifact generation
-- 🚀 Version code generation
-- 🔑 Keystore and Google Services integration
+- Debug and Release build support
+- APK signing for Release builds
+- Gradle dependency caching
+- Artifact upload
+- Google Services integration
+- Fastlane automation
 
-## Usage Examples
+## Prerequisites
 
-### Debug Build
+Before using this action, ensure you have:
+
+1. A valid Android project with a Gradle build configuration
+2. For Release builds:
+  - A keystore file for signing your APK
+  - Google Services JSON file (if using Firebase)
+
+## Setup
+
+### Fastlane Setup
+
+Create a `Gemfile` in your project root:
+
+```ruby
+source "https://rubygems.org"
+
+gem "fastlane"
+```
+
+Create a `fastlane/Fastfile` with the following content:
+
+```ruby
+default_platform(:android)
+
+platform :android do
+  desc "Assemble Debug APKs"
+  lane :assembleDebugApks do
+    gradle(
+      task: "assemble",
+      build_type: "Debug"
+    )
+  end
+
+  desc "Assemble Release APKs"
+  lane :assembleReleaseApks do |options|
+    gradle(
+      task: "assemble",
+      build_type: "Release",
+      properties: {
+        "android.injected.signing.store.file" => options[:storeFile],
+        "android.injected.signing.store.password" => options[:storePassword],
+        "android.injected.signing.key.alias" => options[:keyAlias],
+        "android.injected.signing.key.password" => options[:keyPassword],
+      }
+    )
+  end
+end
+```
+
+## Usage
+
+Add the following workflow to your GitHub Actions:
 
 ```yaml
-- name: Checkout Repository
-  uses: actions/checkout@v4
-  with:
-    fetch-depth: 0
+name: Build Android App
 
-- name: Build Android Debug
-  uses: openMF/kmp-build-android-app-action@v1.0.0
-  with:
-    android_package_name: 'myapp'
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      # For Debug Build
+      - name: Build Debug APK
+        uses: openMF/kmp-build-android-action@v2.0.0
+        with:
+          android_package_name: 'app'
+          build_type: 'Debug'
+
+      # For Release Build
+      - name: Build Release APK
+        uses: openMF/kmp-build-android-action@v2.0.0
+        with:
+          android_package_name: 'app'
+          build_type: 'Release'
+          google_services: ${{ secrets.GOOGLE_SERVICES }}
+          keystore_file: ${{ secrets.RELEASE_KEYSTORE }}
+          keystore_password: ${{ secrets.KEYSTORE_PASSWORD }}
+          keystore_alias: ${{ secrets.KEYSTORE_ALIAS }}
+          keystore_alias_password: ${{ secrets.KEYSTORE_ALIAS_PASSWORD }}
 ```
-
-### Release Build
-
-```yaml
-- name: Build Android Release
-  uses: openMF/kmp-build-android-app-action@v1.0.0
-  id: build-android
-  with:
-    android_package_name: 'myapp'
-    build_type: 'Release'
-    key_store: ${{ secrets.KEYSTORE_BASE64 }}
-    google_services: ${{ secrets.GOOGLE_SERVICES_BASE64 }}
-    key_store_password: ${{ secrets.KEYSTORE_PASSWORD }}
-    key_store_alias: ${{ secrets.KEY_ALIAS }}
-    key_store_alias_password: ${{ secrets.KEY_ALIAS_PASSWORD }}
-
-- name: Display APK Paths
-  run: |
-    echo "Demo APK: ${{ steps.build-android.outputs.demo_apk }}"
-    echo "Prod APK: ${{ steps.build-android.outputs.prod_apk }}"
-```
-
-## Workflow Diagram
-
-```mermaid
-flowchart TD
-    A[Start Build Process] --> B[Set up Java 17]
-    B --> C[Setup Gradle]
-    C --> D[Cache Gradle Dependencies]
-    D --> E[Generate Version Number]
-    E --> F{Build Type?}
-    F -->|Debug| G[Build Debug APK]
-    F -->|Release| H[Inflate Secrets]
-    H --> I[Build Release APK]
-    G --> J[Collect APK Paths]
-    I --> J
-    J --> K[Upload Artifacts]
-    K --> L[End Build Process]
-```
-
-## Android Project Configuration
-Release Build Environment Variables
-To use release build environment variables in your Android project, update your build.gradle files:
-
-App-level `build.gradle`
-
-```kotlin
-android {
-    namespace = "org.mifospay"
-
-    defaultConfig {
-        applicationId = "org.mifospay"
-        versionName = System.getenv("VERSION") ?: project.dynamicVersion
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
-        vectorDrawables.useSupportLibrary = true
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "release_keystore.keystore")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "DefaultPassword"
-            keyAlias = System.getenv("KEYSTORE_ALIAS") ?: "default-alias"
-            keyPassword = System.getenv("KEYSTORE_ALIAS_PASSWORD") ?: "DefaultAlias"
-            enableV1Signing = true
-            enableV2Signing = true
-        }
-    }
-}
-```
-
 
 ## Inputs
 
-### `android_package_name`
-
-- **Description**: Name of the Android project module
-- **Required**: `true`
-- **Type**: `string`
-- **Example**: `'app'`
-
-### `build_type`
-
-- **Description**: Type of build to perform
-- **Required**: `true`
-- **Default**: `'Debug'`
-- **Options**:
-    - `'Debug'`
-    - `'Release'`
-
-### `key_store` (Optional for Release)
-
-- **Description**: Base64 encoded keystore file
-- **Required**: `false` (Required for Release builds)
-- **Type**: `string`
-
-### `google_services` (Optional)
-
-- **Description**: google-services.json file
-- **Required**: `false`
-- **Type**: `string`
-
-### Additional Security Inputs
-
-- `key_store_password`
-- `key_store_alias`
-- `key_store_alias_password`
+| Input                     | Description                                       | Required | Default |
+|---------------------------|---------------------------------------------------|----------|---------|
+| `android_package_name`    | Name of your Android project module (e.g., 'app') | Yes      | -       |
+| `build_type`              | Build type to perform ('Debug' or 'Release')      | Yes      | 'Debug' |
+| `google_services`         | Base64 encoded google-services.json file          | No       | -       |
+| `keystore_file`           | Base64 encoded release keystore file              | No       | -       |
+| `keystore_password`       | Password for the keystore file                    | No       | -       |
+| `keystore_alias`          | Alias for the keystore file                       | No       | -       |
+| `keystore_alias_password` | Password for the keystore alias                   | No       | -       |
 
 ## Outputs
 
-### `artifact-name`
+| Output          | Description                                   |
+|-----------------|-----------------------------------------------|
+| `artifact-name` | Name of the uploaded artifact ('android-app') |
 
-- **Description**: Generated artifact name
-- **Type**: `string`
-- **Default**: `'android-app'`
+## Setting up Secrets
 
-## Release Configuration
+1. Encode your files to base64:
+```bash
+base64 -i path/to/release.keystore -o keystore.txt
+base64 -i path/to/google-services.json -o google-services.txt
+```
 
-For release builds, you must provide:
+2. Add the following secrets to your GitHub repository:
+- `RELEASE_KEYSTORE`: Content of keystore.txt
+- `KEYSTORE_PASSWORD`: Your keystore password
+- `KEYSTORE_ALIAS`: Your keystore alias
+- `KEYSTORE_ALIAS_PASSWORD`: Your keystore alias password
+- `GOOGLE_SERVICES`: Content of google-services.txt (if using Firebase)
 
-- Base64 encoded keystore
-- Keystore password
-- Keystore alias
-- Keystore alias password
+## Artifacts
 
-## Version Generation
-
-1. Gradle versionFile Task (Preferred)
-
-- If version.txt can be generated via Gradle task
-- Version read from version.txt
-- Version code calculated based on total commit count
-
-2. Git-based Fallback
-
-- Uses latest Git tag
-- Starts from 1.0.0 if no tags exist
-- Increments patch version
-- Generates version code based on commit count
-
-
-## Artifact Handling
-
-- Uploads APKs for both Demo and Prod flavors
-- Artifact name defaults to `android-app`
-- APK paths are dynamically discovered
-
-## Best Practices
-
-- Use secrets for sensitive information
-- Separate debug and release configurations
-- Implement secure keystore management
-- Use mock files for development
-
-## Troubleshooting
-
-- Verify keystore and Google Services configurations
-- Check Gradle build scripts
-- Review GitHub Actions logs
-- Ensure all required secrets are configured
-
-## Performance Optimization
-
-- Gradle dependency caching
-- Efficient version code generation
-- Minimal build step overhead
-
-## Security Considerations
-
-- Never commit sensitive files directly
-- Use GitHub secrets for confidential data
-- Rotate keys and credentials regularly
-
-## Requirements
-
-- Java 17
-- Gradle
-- Android Gradle Plugin
-- Configured flavors (Demo/Prod)
+The action uploads the built APKs as artifacts with the name 'android-app'. You can find the APKs in:
+- `build/outputs/apk/demo/`
+- `build/outputs/apk/prod/`
